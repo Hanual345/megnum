@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from ai_client import query_volcano_ai
 from pymongo import MongoClient
@@ -19,6 +19,14 @@ db = mongo_client["volcano_db"]
 history_collection = db["chat_history"]
 users_collection = db["users"]
 sessions_collection = db["chat_sessions"]
+
+@app.route('/')
+def serve_index():
+    return send_from_directory('.', 'index.html')
+
+@app.route('/<path:path>')
+def serve_static(path):
+    return send_from_directory('.', path)
 
 import hashlib
 import os

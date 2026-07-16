@@ -539,7 +539,7 @@ function generateBotResponse(prompt, attachment = null) {
   messagesContainer.scrollTop = messagesContainer.scrollHeight;
   
   // Call Python backend
-  fetch('http://localhost:5001/api/chat', {
+  fetch('/api/chat', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
@@ -645,7 +645,7 @@ chatHistory.addEventListener('click', (e) => {
 
 function loadRecentSessions() {
   if (!currentUser) return;
-  fetch(`http://localhost:5001/api/sessions?user_id=${currentUser.id}`)
+  fetch(`/api/sessions?user_id=${currentUser.id}`)
     .then(res => res.json())
     .then(data => {
       if (data.success && data.sessions) {
@@ -673,7 +673,7 @@ const clearAllSessionsBtn = document.getElementById('clearAllSessionsBtn');
 clearAllSessionsBtn.addEventListener('click', () => {
   if (!currentUser) return;
   if (confirm("Are you sure you want to clear all your recent chat sessions and history?")) {
-    fetch('http://localhost:5001/api/sessions/clear', {
+    fetch('/api/sessions/clear', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -704,7 +704,7 @@ function loadSessionHistory() {
   const sessionId = localStorage.getItem('currentSessionId');
   if (!sessionId) return;
   
-  fetch(`http://localhost:5001/api/history?session_id=${sessionId}`)
+  fetch(`/api/history?session_id=${sessionId}`)
     .then(res => res.json())
     .then(data => {
       if (data.success && data.history && data.history.length > 0) {
@@ -777,7 +777,7 @@ loginForm.addEventListener('submit', (e) => {
   const emailVal = document.getElementById('loginEmail').value;
   const passwordVal = document.getElementById('loginPassword').value;
   
-  fetch('http://localhost:5001/api/auth/login', {
+  fetch('/api/auth/login', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
@@ -807,7 +807,7 @@ signupForm.addEventListener('submit', (e) => {
   const emailVal = document.getElementById('signupEmail').value;
   const passwordVal = document.getElementById('signupPassword').value;
   
-  fetch('http://localhost:5001/api/auth/signup', {
+  fetch('/api/auth/signup', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
