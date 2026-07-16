@@ -1,14 +1,18 @@
+import os
 from openai import OpenAI
 
-# Initialize two client instances for different models
+# Initialize two client instances for different models using environment variables
+api_key_lite = os.environ.get("NVIDIA_API_KEY_LITE", "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")
+api_key_flash = os.environ.get("NVIDIA_API_KEY_FLASH", "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")
+
 client_lite = OpenAI(
   base_url="https://integrate.api.nvidia.com/v1",
-  api_key="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"
+  api_key=api_key_lite
 )
 
 client_flash = OpenAI(
   base_url="https://integrate.api.nvidia.com/v1",
-  api_key="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"
+  api_key=api_key_flash
 )
 
 def query_volcano_ai(prompt, history=None, model='magma2', attachment=None, deep_think=False):

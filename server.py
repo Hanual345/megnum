@@ -12,8 +12,11 @@ app = Flask(__name__)
 CORS(app) # Enable Cross-Origin requests for the frontend
 
 # MongoDB Configuration
-password = urllib.parse.quote_plus("Volcano@2026")
-mongo_uri = f"mongodb+srv://adminvolcano_db_user:{password}@volcano.fczkc5w.mongodb.net/?appName=Volcano"
+mongo_uri = os.environ.get("MONGODB_URI")
+if not mongo_uri:
+    password = urllib.parse.quote_plus("Volcano@2026")
+    mongo_uri = f"mongodb+srv://adminvolcano_db_user:{password}@volcano.fczkc5w.mongodb.net/?appName=Volcano"
+
 mongo_client = MongoClient(mongo_uri)
 db = mongo_client["volcano_db"]
 history_collection = db["chat_history"]
