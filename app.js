@@ -13,7 +13,7 @@ function generateUUID() {
 let currentSessionId = localStorage.getItem('currentSessionId') || generateUUID();
 localStorage.setItem('currentSessionId', currentSessionId);
 let selectedModel = 'magma2';
-let currentUser = JSON.parse(localStorage.getItem('currentUser')) || null;
+let currentUser = { id: 'default_user', username: 'Guest', email: 'guest@volcano.ai' };
 
 function toggleSidebar() {
   sidebar.classList.toggle('closed');
@@ -759,16 +759,13 @@ tabSignupBtn.addEventListener('click', () => {
 });
 
 function checkAuth() {
-  if (!currentUser) {
-    authOverlay.style.display = 'flex';
-  } else {
-    authOverlay.style.display = 'none';
-    profileUsername.textContent = currentUser.username;
-    profileEmail.textContent = currentUser.email;
-    userAvatar.textContent = currentUser.username.charAt(0).toUpperCase();
-    loadRecentSessions();
-    loadSessionHistory();
-  }
+  if (authOverlay) authOverlay.style.display = 'none';
+  if (profileUsername) profileUsername.textContent = currentUser.username;
+  if (profileEmail) profileEmail.textContent = currentUser.email;
+  if (userAvatar) userAvatar.textContent = currentUser.username.charAt(0).toUpperCase();
+  if (logoutBtn) logoutBtn.style.display = 'none';
+  loadRecentSessions();
+  loadSessionHistory();
 }
 
 // Login Submit
