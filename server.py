@@ -17,6 +17,21 @@ mongo_uri = f"mongodb+srv://adminvolcano_db_user:{password}@volcano.fczkc5w.mong
 mongo_client = MongoClient(mongo_uri)
 db = mongo_client["volcano_db"]
 history_collection = db["chat_history"]
+users_collection = db["users"]
+sessions_collection = db["chat_sessions"]
+
+import hashlib
+import os
+
+def hash_password(password, salt=None):
+    if salt is None:
+        salt = os.urandom(16).hex()
+    hash_obj = hashlib.sha256((password + salt).encode('utf-8'))
+    return hash_obj.hexdigest(), salt
+
+def verify_password(password, salt, stored_hash):
+    hash_val, _ = hash_password(password, salt)
+    return hash_val == stored_hash
 
 def extract_text_from_pdf(base64_data):
     try:
@@ -35,6 +50,108 @@ def extract_text_from_pdf(base64_data):
         print("Error parsing PDF:", e)
         return None
 
+# Auth Endpoints
+@app.route('/api/auth/signup', methods=['POST'])
+def signup():
+    data = request.json or {}
+    username = data.get('username', '').strip()
+    email = data.get('email', '').strip()
+    password = data.get('password', '')
+
+    if not username or not email or not password:
+        return jsonify({"success": False, "error": "Username, email, and password are required"}), 400
+
+    try:
+        # Check if email or username already exists
+        if users_collection.find_one({"email": email}):
+            return jsonify({"success": False, "error": "Email is already registered"}), 400
+        if users_collection.find_one({"username": username}):
+            return jsonify({"success": False, "error": "Username is already taken"}), 400
+
+        pwd_hash, salt = hash_password(password)
+        user_doc = {
+            "username": username,
+            "email": email,
+            "password_hash": pwd_hash,
+            "salt": salt,
+            "created_at": datetime.datetime.utcnow()
+        }
+        result = users_collection.insert_one(user_doc)
+        return jsonify({
+            "success": True,
+            "user": {
+                "id": str(result.inserted_id),
+                "username": username,
+                "email": email
+            }
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/auth/login', methods=['POST'])
+def login():
+    data = request.json or {}
+    login_input = data.get('email', '').strip() # Can be username or email
+    password = data.get('password', '')
+
+    if not login_input or not password:
+        return jsonify({"success": False, "error": "Email/Username and password are required"}), 400
+
+    try:
+        # Find user by email or username
+        user = users_collection.find_one({"$or": [{"email": login_input}, {"username": login_input}]})
+        if not user:
+            return jsonify({"success": False, "error": "Account not found"}), 400
+
+        # Verify password
+        if not verify_password(password, user["salt"], user["password_hash"]):
+            return jsonify({"success": False, "error": "Incorrect password"}), 400
+
+        return jsonify({
+            "success": True,
+            "user": {
+                "id": str(user["_id"]),
+                "username": user["username"],
+                "email": user["email"]
+            }
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+# Recent Sessions Endpoints
+@app.route('/api/sessions', methods=['GET'])
+def get_sessions():
+    user_id = request.args.get('user_id', '')
+    if not user_id:
+        return jsonify({"success": False, "error": "User ID is required"}), 400
+    try:
+        cursor = sessions_collection.find({"user_id": user_id}).sort("created_at", -1)
+        sessions = []
+        for s in cursor:
+            sessions.append({
+                "session_id": s.get("session_id"),
+                "title": s.get("title"),
+                "created_at": s.get("created_at").isoformat() if s.get("created_at") else None
+            })
+        return jsonify({"success": True, "sessions": sessions})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/sessions/clear', methods=['POST'])
+def clear_sessions():
+    data = request.json or {}
+    user_id = data.get('user_id', '')
+    if not user_id:
+        return jsonify({"success": False, "error": "User ID is required"}), 400
+    try:
+        # Delete all chat messages for this user
+        history_collection.delete_many({"user_id": user_id})
+        # Delete all session cards
+        sessions_collection.delete_many({"user_id": user_id})
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
 @app.route('/api/chat', methods=['POST'])
 def chat():
     data = request.json or {}
@@ -42,6 +159,7 @@ def chat():
     session_id = data.get('session_id', 'default_session')
     model = data.get('model', 'magma2')
     attachment = data.get('attachment', None)
+    user_id = data.get('user_id', 'default_user')
     deep_think = data.get('deep_think', False)
     
     if not prompt and not attachment:
@@ -75,9 +193,21 @@ def chat():
     if result.get("success"):
         try:
             now = datetime.datetime.utcnow()
+            
+            # Save session descriptor in recent sessions if it's the first message
+            if not sessions_collection.find_one({"session_id": session_id}):
+                title = prompt[:50] + ("..." if len(prompt) > 50 else "") if prompt else (attachment.get("name", "Document") if attachment else "New Chat")
+                sessions_collection.insert_one({
+                    "session_id": session_id,
+                    "user_id": user_id,
+                    "title": title,
+                    "created_at": now
+                })
+
             history_collection.insert_many([
                 {
                     "session_id": session_id,
+                    "user_id": user_id,
                     "role": "user",
                     "content": prompt,
                     "attachment": attachment,
@@ -85,6 +215,7 @@ def chat():
                 },
                 {
                     "session_id": session_id,
+                    "user_id": user_id,
                     "role": "assistant",
                     "content": result.get("content"),
                     "reasoning": result.get("reasoning", None),

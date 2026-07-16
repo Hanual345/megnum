@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css?v=7" />
+  <link rel="stylesheet" href="style.css?v=8" />
   <!-- KaTeX CSS & JS for mathematical formula rendering -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css" />
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
@@ -38,7 +38,10 @@
     </button>
 
     <div class="sidebar-section">
-      <span class="sidebar-label">Recent</span>
+      <div class="sidebar-section-header">
+        <span class="sidebar-label">Recent</span>
+        <button class="clear-all-btn" id="clearAllSessionsBtn" title="Clear all chats">Clear All</button>
+      </div>
       <ul class="chat-history" id="chatHistory">
       </ul>
     </div>
@@ -49,11 +52,14 @@
         Settings
       </button>
       <div class="user-profile">
-        <div class="avatar" id="userAvatar">V</div>
+        <div class="avatar" id="userAvatar">U</div>
         <div class="user-info">
-          <span class="user-name">Volcano User</span>
-          <span class="user-email">user@volcano.ai</span>
+          <span class="user-name" id="profileUsername">Volcano User</span>
+          <span class="user-email" id="profileEmail">user@volcano.ai</span>
         </div>
+        <button class="logout-btn" id="logoutBtn" title="Log out">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+        </button>
       </div>
     </div>
   </aside>
@@ -298,6 +304,55 @@
     </div>
   </div>
 
-  <script src="app.js?v=7"></script>
+  <!-- Authentication Modal Overlay -->
+  <div class="auth-overlay" id="authOverlay" style="display: none;">
+    <div class="auth-modal">
+      <div class="auth-brand">
+        <img src="logo.png" alt="Volcano" class="auth-logo" />
+        <h2>Volcano AI</h2>
+        <p>Unlock the fiery power of AI</p>
+      </div>
+      
+      <!-- Toggle buttons -->
+      <div class="auth-tabs">
+        <button class="auth-tab-btn active" id="tabLoginBtn">Login</button>
+        <button class="auth-tab-btn" id="tabSignupBtn">Sign Up</button>
+      </div>
+      
+      <!-- Login Form -->
+      <form class="auth-form" id="loginForm">
+        <div class="form-group">
+          <label for="loginEmail">Email or Username</label>
+          <input type="text" id="loginEmail" placeholder="Enter your email or username" required />
+        </div>
+        <div class="form-group">
+          <label for="loginPassword">Password</label>
+          <input type="password" id="loginPassword" placeholder="Enter your password" required />
+        </div>
+        <div class="auth-error-msg" id="loginErrorMsg"></div>
+        <button type="submit" class="auth-submit-btn">Erupt & Login</button>
+      </form>
+      
+      <!-- Signup Form -->
+      <form class="auth-form" id="signupForm" style="display: none;">
+        <div class="form-group">
+          <label for="signupUsername">Username</label>
+          <input type="text" id="signupUsername" placeholder="Choose a username" required />
+        </div>
+        <div class="form-group">
+          <label for="signupEmail">Email Address</label>
+          <input type="email" id="signupEmail" placeholder="Enter your email" required />
+        </div>
+        <div class="form-group">
+          <label for="signupPassword">Password</label>
+          <input type="password" id="signupPassword" placeholder="Create a password" required />
+        </div>
+        <div class="auth-error-msg" id="signupErrorMsg"></div>
+        <button type="submit" class="auth-submit-btn">Create Account</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="app.js?v=8"></script>
 </body>
 </html>

@@ -13,6 +13,7 @@ function generateUUID() {
 let currentSessionId = localStorage.getItem('currentSessionId') || generateUUID();
 localStorage.setItem('currentSessionId', currentSessionId);
 let selectedModel = 'magma2';
+let currentUser = JSON.parse(localStorage.getItem('currentUser')) || null;
 
 function toggleSidebar() {
   sidebar.classList.toggle('closed');
@@ -546,6 +547,7 @@ function generateBotResponse(prompt, attachment = null) {
     body: JSON.stringify({
       prompt: prompt,
       session_id: currentSessionId,
+      user_id: currentUser ? currentUser.id : 'default_user',
       model: selectedModel,
       attachment: attachment,
       deep_think: isDeepThink
@@ -555,6 +557,7 @@ function generateBotResponse(prompt, attachment = null) {
   .then(data => {
     loaderDiv.remove();
     if (data.success) {
+      loadRecentSessions();
       let responseContent = '';
       if (data.reasoning) {
         responseContent += `*Thinking Process:*\n\`\`\`\n${data.reasoning}\n\`\`\`\n\n`;
@@ -621,20 +624,80 @@ newChatBtn.addEventListener('click', () => {
   // Generate a new session ID for a fresh session
   currentSessionId = generateUUID();
   localStorage.setItem('currentSessionId', currentSessionId);
+  loadRecentSessions();
 });
 
-// Chat history click handler
-const historyItems = document.querySelectorAll('.history-item');
-historyItems.forEach(item => {
-  item.addEventListener('click', (e) => {
-    historyItems.forEach(i => i.classList.remove('active'));
-    item.classList.add('active');
-    const selectedText = item.querySelector('span').textContent;
-    // Don't auto-send mock on history selection load to avoid double triggering
-    messagesContainer.innerHTML = '';
-    addMessage('You', selectedText, false);
-    generateBotResponse(selectedText);
-  });
+// Chat history click handler using event delegation
+const chatHistory = document.getElementById('chatHistory');
+chatHistory.addEventListener('click', (e) => {
+  const item = e.target.closest('.history-item');
+  if (!item) return;
+  
+  document.querySelectorAll('.history-item').forEach(i => i.classList.remove('active'));
+  item.classList.add('active');
+  
+  const sessId = item.getAttribute('data-session-id');
+  currentSessionId = sessId;
+  localStorage.setItem('currentSessionId', sessId);
+  
+  loadSessionHistory();
+});
+
+function loadRecentSessions() {
+  if (!currentUser) return;
+  fetch(`http://localhost:5001/api/sessions?user_id=${currentUser.id}`)
+    .then(res => res.json())
+    .then(data => {
+      if (data.success && data.sessions) {
+        chatHistory.innerHTML = '';
+        data.sessions.forEach(s => {
+          const li = document.createElement('li');
+          li.className = 'history-item';
+          if (s.session_id === currentSessionId) {
+            li.classList.add('active');
+          }
+          li.setAttribute('data-session-id', s.session_id);
+          li.innerHTML = `
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            <span>${s.title}</span>
+          `;
+          chatHistory.appendChild(li);
+        });
+      }
+    })
+    .catch(err => console.error("Error loading recent sessions:", err));
+}
+
+// Clear all sessions
+const clearAllSessionsBtn = document.getElementById('clearAllSessionsBtn');
+clearAllSessionsBtn.addEventListener('click', () => {
+  if (!currentUser) return;
+  if (confirm("Are you sure you want to clear all your recent chat sessions and history?")) {
+    fetch('http://localhost:5001/api/sessions/clear', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ user_id: currentUser.id })
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success) {
+        // Clear UI and messages
+        messagesContainer.innerHTML = '';
+        messagesContainer.style.display = 'none';
+        welcomeScreen.style.display = 'flex';
+        
+        currentSessionId = generateUUID();
+        localStorage.setItem('currentSessionId', currentSessionId);
+        
+        loadRecentSessions();
+      } else {
+        alert("Failed to clear sessions: " + data.error);
+      }
+    })
+    .catch(err => console.error("Error clearing sessions:", err));
+  }
 });
 
 function loadSessionHistory() {
@@ -663,8 +726,129 @@ function loadSessionHistory() {
     .catch(err => console.error("Error loading chat history:", err));
 }
 
+// Auth Elements
+const authOverlay = document.getElementById('authOverlay');
+const tabLoginBtn = document.getElementById('tabLoginBtn');
+const tabSignupBtn = document.getElementById('tabSignupBtn');
+const loginForm = document.getElementById('loginForm');
+const signupForm = document.getElementById('signupForm');
+const loginErrorMsg = document.getElementById('loginErrorMsg');
+const signupErrorMsg = document.getElementById('signupErrorMsg');
+const logoutBtn = document.getElementById('logoutBtn');
+const profileUsername = document.getElementById('profileUsername');
+const profileEmail = document.getElementById('profileEmail');
+const userAvatar = document.getElementById('userAvatar');
+
+// Switch tabs
+tabLoginBtn.addEventListener('click', () => {
+  tabSignupBtn.classList.remove('active');
+  tabLoginBtn.classList.add('active');
+  signupForm.style.display = 'none';
+  loginForm.style.display = 'flex';
+  loginErrorMsg.textContent = '';
+  signupErrorMsg.textContent = '';
+});
+
+tabSignupBtn.addEventListener('click', () => {
+  tabLoginBtn.classList.remove('active');
+  tabSignupBtn.classList.add('active');
+  loginForm.style.display = 'none';
+  signupForm.style.display = 'flex';
+  loginErrorMsg.textContent = '';
+  signupErrorMsg.textContent = '';
+});
+
+function checkAuth() {
+  if (!currentUser) {
+    authOverlay.style.display = 'flex';
+  } else {
+    authOverlay.style.display = 'none';
+    profileUsername.textContent = currentUser.username;
+    profileEmail.textContent = currentUser.email;
+    userAvatar.textContent = currentUser.username.charAt(0).toUpperCase();
+    loadRecentSessions();
+    loadSessionHistory();
+  }
+}
+
+// Login Submit
+loginForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const emailVal = document.getElementById('loginEmail').value;
+  const passwordVal = document.getElementById('loginPassword').value;
+  
+  fetch('http://localhost:5001/api/auth/login', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ email: emailVal, password: passwordVal })
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data.success) {
+      currentUser = data.user;
+      localStorage.setItem('currentUser', JSON.stringify(currentUser));
+      loginForm.reset();
+      checkAuth();
+    } else {
+      loginErrorMsg.textContent = data.error || "Login failed";
+    }
+  })
+  .catch(err => {
+    loginErrorMsg.textContent = "Error: " + err.message;
+  });
+});
+
+// Signup Submit
+signupForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const usernameVal = document.getElementById('signupUsername').value;
+  const emailVal = document.getElementById('signupEmail').value;
+  const passwordVal = document.getElementById('signupPassword').value;
+  
+  fetch('http://localhost:5001/api/auth/signup', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ username: usernameVal, email: emailVal, password: passwordVal })
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data.success) {
+      currentUser = data.user;
+      localStorage.setItem('currentUser', JSON.stringify(currentUser));
+      signupForm.reset();
+      checkAuth();
+    } else {
+      signupErrorMsg.textContent = data.error || "Signup failed";
+    }
+  })
+  .catch(err => {
+    signupErrorMsg.textContent = "Error: " + err.message;
+  });
+});
+
+// Logout Submit
+logoutBtn.addEventListener('click', () => {
+  if (confirm("Are you sure you want to log out?")) {
+    currentUser = null;
+    localStorage.removeItem('currentUser');
+    localStorage.removeItem('currentSessionId');
+    currentSessionId = generateUUID();
+    localStorage.setItem('currentSessionId', currentSessionId);
+    
+    messagesContainer.innerHTML = '';
+    messagesContainer.style.display = 'none';
+    welcomeScreen.style.display = 'flex';
+    chatHistory.innerHTML = '';
+    
+    checkAuth();
+  }
+});
+
 // Remove active highlights by default on initial page load
 document.addEventListener("DOMContentLoaded", () => {
-  historyItems.forEach(i => i.classList.remove('active'));
-  loadSessionHistory();
+  checkAuth();
 });
