@@ -1,3 +1,4 @@
+import os
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from ai_client import query_volcano_ai
@@ -32,7 +33,6 @@ def serve_static(path):
     return send_from_directory('.', path)
 
 import hashlib
-import os
 
 def hash_password(password, salt=None):
     if salt is None:
