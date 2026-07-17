@@ -538,6 +538,15 @@ function generateBotResponse(prompt, attachment = null) {
   messagesContainer.appendChild(loaderDiv);
   messagesContainer.scrollTop = messagesContainer.scrollHeight;
   
+  // Safe JSON fetch helper — never crashes on HTML error pages
+  function safeJson(res) {
+    const ct = res.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) {
+      throw new Error(`Server returned an unexpected response (HTTP ${res.status}). The backend may still be starting up — please try again in a moment.`);
+    }
+    return res.json();
+  }
+
   // Call Python backend
   fetch('/api/chat', {
     method: 'POST',
@@ -553,7 +562,7 @@ function generateBotResponse(prompt, attachment = null) {
       deep_think: isDeepThink
     })
   })
-  .then(res => res.json())
+  .then(safeJson)
   .then(data => {
     loaderDiv.remove();
     if (data.success) {
@@ -570,9 +579,10 @@ function generateBotResponse(prompt, attachment = null) {
   })
   .catch(err => {
     loaderDiv.remove();
-    addMessage('Volcano', `Could not connect to Volcano backend: ${err.message}`, true);
+    addMessage('Volcano', `🌋 ${err.message}`, true);
   });
 }
+
 
 // Handling user input triggers
 function handleSend() {
@@ -646,8 +656,12 @@ chatHistory.addEventListener('click', (e) => {
 function loadRecentSessions() {
   if (!currentUser) return;
   fetch(`/api/sessions?user_id=${currentUser.id}`)
-    .then(res => res.json())
+    .then(res => {
+      const ct = res.headers.get('content-type') || '';
+      return ct.includes('application/json') ? res.json() : null;
+    })
     .then(data => {
+      if (!data) return;
       if (data.success && data.sessions) {
         chatHistory.innerHTML = '';
         data.sessions.forEach(s => {
@@ -668,6 +682,7 @@ function loadRecentSessions() {
     .catch(err => console.error("Error loading recent sessions:", err));
 }
 
+
 // Clear all sessions
 const clearAllSessionsBtn = document.getElementById('clearAllSessionsBtn');
 clearAllSessionsBtn.addEventListener('click', () => {
@@ -675,28 +690,28 @@ clearAllSessionsBtn.addEventListener('click', () => {
   if (confirm("Are you sure you want to clear all your recent chat sessions and history?")) {
     fetch('/api/sessions/clear', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ user_id: currentUser.id })
     })
-    .then(res => res.json())
+    .then(res => {
+      const ct = res.headers.get('content-type') || '';
+      return ct.includes('application/json') ? res.json() : null;
+    })
     .then(data => {
+      if (!data) return;
       if (data.success) {
-        // Clear UI and messages
         messagesContainer.innerHTML = '';
         messagesContainer.style.display = 'none';
         welcomeScreen.style.display = 'flex';
-        
         currentSessionId = generateUUID();
         localStorage.setItem('currentSessionId', currentSessionId);
-        
         loadRecentSessions();
       } else {
         alert("Failed to clear sessions: " + data.error);
       }
     })
     .catch(err => console.error("Error clearing sessions:", err));
+
   }
 });
 
@@ -705,8 +720,12 @@ function loadSessionHistory() {
   if (!sessionId) return;
   
   fetch(`/api/history?session_id=${sessionId}`)
-    .then(res => res.json())
+    .then(res => {
+      const ct = res.headers.get('content-type') || '';
+      return ct.includes('application/json') ? res.json() : null;
+    })
     .then(data => {
+      if (!data) return;
       if (data.success && data.history && data.history.length > 0) {
         messagesContainer.innerHTML = '';
         welcomeScreen.style.display = 'none';
@@ -776,12 +795,14 @@ loginForm.addEventListener('submit', (e) => {
   
   fetch('/api/auth/login', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email: emailVal, password: passwordVal })
   })
-  .then(res => res.json())
+  .then(res => {
+    const ct = res.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) throw new Error('Server error — please try again.');
+    return res.json();
+  })
   .then(data => {
     if (data.success) {
       currentUser = data.user;
@@ -793,9 +814,10 @@ loginForm.addEventListener('submit', (e) => {
     }
   })
   .catch(err => {
-    loginErrorMsg.textContent = "Error: " + err.message;
+    loginErrorMsg.textContent = err.message;
   });
 });
+
 
 // Signup Submit
 signupForm.addEventListener('submit', (e) => {
@@ -806,12 +828,14 @@ signupForm.addEventListener('submit', (e) => {
   
   fetch('/api/auth/signup', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username: usernameVal, email: emailVal, password: passwordVal })
   })
-  .then(res => res.json())
+  .then(res => {
+    const ct = res.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) throw new Error('Server error — please try again.');
+    return res.json();
+  })
   .then(data => {
     if (data.success) {
       currentUser = data.user;
@@ -823,9 +847,10 @@ signupForm.addEventListener('submit', (e) => {
     }
   })
   .catch(err => {
-    signupErrorMsg.textContent = "Error: " + err.message;
+    signupErrorMsg.textContent = err.message;
   });
 });
+
 
 // Logout Submit
 logoutBtn.addEventListener('click', () => {
