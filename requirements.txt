@@ -4,3 +4,4 @@ openai
 pymongo
 pypdf
 gunicorn
+python-dotenv

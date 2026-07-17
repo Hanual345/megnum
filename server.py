@@ -1,4 +1,9 @@
 import os
+try:
+    from dotenv import load_dotenv
+    load_dotenv()  # loads .env file for local development
+except ImportError:
+    pass
 import hashlib
 import base64
 import io
