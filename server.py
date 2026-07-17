@@ -205,7 +205,46 @@ def clear_sessions():
         return jsonify({"success": False, "error": str(exc)}), 500
 
 
-# ── Chat endpoint ─────────────────────────────────────────────────────────────
+# ── Save endpoint (used by Puter.js frontend to persist history) ──────────────
+@app.route("/api/save", methods=["POST"])
+def save_message():
+    history_col, _, sessions_col = get_db()
+    data       = request.get_json(silent=True) or {}
+    session_id = data.get("session_id", "default_session")
+    user_id    = data.get("user_id", "default_user")
+    prompt     = data.get("prompt", "")
+    response   = data.get("response", "")
+    reasoning  = data.get("reasoning", None)
+    attachment = data.get("attachment", None)
+
+    if not prompt and not response:
+        return jsonify({"success": False, "error": "Nothing to save"}), 400
+
+    if history_col is None:
+        return jsonify({"success": True, "note": "Database unavailable, not saved"})
+
+    try:
+        now = datetime.datetime.utcnow()
+        # Create session record if first message
+        if sessions_col is not None and not sessions_col.find_one({"session_id": session_id}):
+            title = (prompt[:50] + ("..." if len(prompt) > 50 else "")) if prompt else "New Chat"
+            sessions_col.insert_one({
+                "session_id": session_id, "user_id": user_id,
+                "title": title, "created_at": now
+            })
+        history_col.insert_many([
+            {"session_id": session_id, "user_id": user_id, "role": "user",
+             "content": prompt, "attachment": attachment, "timestamp": now},
+            {"session_id": session_id, "user_id": user_id, "role": "assistant",
+             "content": response, "reasoning": reasoning,
+             "timestamp": now + datetime.timedelta(seconds=1)}
+        ])
+        return jsonify({"success": True})
+    except Exception as exc:
+        return jsonify({"success": False, "error": str(exc)}), 500
+
+
+# ── Chat endpoint (kept for fallback) ─────────────────────────────────────────
 @app.route("/api/chat", methods=["POST"])
 def chat():
     data       = request.get_json(silent=True) or {}
