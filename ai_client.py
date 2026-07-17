@@ -9,22 +9,24 @@ _api_key = os.environ.get("OPENROUTER_API_KEY", "")
 _OPENROUTER_BASE = "https://openrouter.ai/api/v1"
 _TIMEOUT = 50  # seconds — stay under Vercel's 60s function limit
 
-# Model fallback chains — if the first model is rate-limited, try the next
+# Model fallback chains — if a model is rate-limited or unavailable, try the next
 _MODELS_LITE = [
     "meta-llama/llama-3.2-3b-instruct:free",
-    "microsoft/phi-3-mini-128k-instruct:free",
+    "meta-llama/llama-3.1-8b-instruct:free",
     "google/gemma-2-9b-it:free",
     "mistralai/mistral-7b-instruct:free",
+    "qwen/qwen-2-7b-instruct:free",
 ]
 _MODELS_FLASH = [
     "meta-llama/llama-3.1-8b-instruct:free",
     "meta-llama/llama-3.2-3b-instruct:free",
     "google/gemma-2-9b-it:free",
     "mistralai/mistral-7b-instruct:free",
+    "qwen/qwen-2-7b-instruct:free",
 ]
 _MODELS_VISION = [
     "meta-llama/llama-3.2-11b-vision-instruct:free",
-    "google/gemma-2-9b-it:free",
+    "meta-llama/llama-3.2-3b-instruct:free",
 ]
 
 # Single shared lazy client (all models use same key/base)
@@ -47,8 +49,7 @@ def _get_client():
 
 
 def _try_models(client, model_list, messages):
-    """Try each model in order, skipping rate-limited ones."""
-    last_err = None
+    """Try each model in order, skipping rate-limited or unavailable ones."""
     for model_id in model_list:
         try:
             completion = client.chat.completions.create(
@@ -62,12 +63,12 @@ def _try_models(client, model_list, messages):
             return completion.choices[0].message.content, None
         except Exception as e:
             err = str(e)
-            if "429" in err or "rate" in err.lower():
-                last_err = f"Model {model_id} rate-limited, trying next..."
-                print(last_err)
-                continue  # try next model
-            return None, err  # non-rate-limit error, stop immediately
-    return None, "All models are temporarily rate-limited. Please try again in 30 seconds."
+            # Skip this model if rate-limited (429) or not available (404)
+            if "429" in err or "404" in err or "rate" in err.lower() or "no endpoints" in err.lower():
+                print(f"Skipping {model_id}: {err[:80]}")
+                continue
+            return None, err  # unexpected error — stop immediately
+    return None, "All available models are temporarily busy. Please try again in 30 seconds."
 
 
 def query_volcano_ai(prompt, history=None, model="magma2", attachment=None, deep_think=False):
