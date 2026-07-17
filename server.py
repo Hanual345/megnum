@@ -30,6 +30,9 @@ def serve_index():
 
 @app.route('/<path:path>')
 def serve_static(path):
+    # Do NOT serve static files for API routes — return a proper JSON 404 instead
+    if path.startswith('api/'):
+        return jsonify({"success": False, "error": f"API endpoint '/{path}' not found"}), 404
     return send_from_directory('.', path)
 
 import hashlib
@@ -256,5 +259,6 @@ def get_history():
         return jsonify({"success": False, "error": str(e)}), 500
 
 if __name__ == '__main__':
-    # Start the server on port 5001 to avoid conflicts with http-server
-    app.run(host='0.0.0.0', port=5001, debug=True)
+    # Use $PORT from environment (required by Render.com), fallback to 5001 locally
+    port = int(os.environ.get('PORT', 5001))
+    app.run(host='0.0.0.0', port=port, debug=True)
