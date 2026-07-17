@@ -4,7 +4,6 @@ from openai import OpenAI
 
 # ── Groq API (free, extremely fast Llama inference) ───────────────────────────
 # Get a free key at: https://console.groq.com
-_api_key = os.environ.get("GROQ_API_KEY", "")
 
 _GROQ_BASE = "https://api.groq.com/openai/v1"
 _TIMEOUT   = 50  # seconds
@@ -28,9 +27,12 @@ _client = None
 def _get_client():
     global _client
     if _client is None:
+        api_key = os.environ.get("GROQ_API_KEY", "")
+        if not api_key:
+            raise ValueError("GROQ_API_KEY is not set. Add it to your .env file or Vercel environment variables.")
         _client = OpenAI(
             base_url=_GROQ_BASE,
-            api_key=_api_key,
+            api_key=api_key,
             timeout=_TIMEOUT,
             max_retries=0,
         )
