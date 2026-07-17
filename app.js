@@ -518,11 +518,8 @@ function formatMessageText(text) {
   return formatted;
 }
 
-async function generateBotResponse(prompt, attachment = null) {
+function generateBotResponse(prompt, attachment = null) {
   const isDeepThink = deepThinkBtn.classList.contains('active-pill');
-  const persona = selectedModel === 'magma-flash' ? 'Fernace Flash' : 'Fernace flash lite';
-  // Map Volcano model names to Puter AI models
-  const puterModel = selectedModel === 'magma-flash' ? 'gpt-4o' : 'gpt-4o-mini';
 
   const loaderDiv = document.createElement('div');
   loaderDiv.className = 'message bot-message loading-msg';
@@ -541,93 +538,47 @@ async function generateBotResponse(prompt, attachment = null) {
   messagesContainer.appendChild(loaderDiv);
   messagesContainer.scrollTop = messagesContainer.scrollHeight;
 
-  try {
-    // ── Build system prompt ──────────────────────────────────────────────────
-    let systemContent = `You are Fernace, an AI model (specifically, the ${persona} model). If asked your name or model, reply that you are ${persona}. Write all mathematical expressions in LaTeX ($...$ inline, $$...$$ block).`;
-    if (isDeepThink) {
-      systemContent += ' Deep Think mode is active. Start your response with a thinking block in <thinking>...</thinking> tags, then give your final answer.';
+  function safeJson(res) {
+    const ct = res.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) {
+      throw new Error(`Server error (HTTP ${res.status}). Please try again in a moment.`);
     }
-
-    // ── Build user message (handle attachments) ───────────────────────────────
-    let userMessage = prompt;
-    if (attachment) {
-      if (attachment.type && attachment.type.startsWith('image/')) {
-        // Puter vision: pass image as content array
-        userMessage = [
-          { type: 'text', text: prompt || `Please describe this image: ${attachment.name} in detail.` },
-          { type: 'image_url', image_url: { url: attachment.data } }
-        ];
-      } else if (attachment.content) {
-        userMessage = `[Attached Document: ${attachment.name} (${attachment.size})]\n--- START FILE CONTENT ---\n${attachment.content}\n--- END FILE CONTENT ---\n\n${prompt || `Please read and describe: ${attachment.name}.`}`;
-      } else {
-        userMessage = `[Attached: ${attachment.name} (${attachment.size})]\n${prompt || `Please describe this attached file: ${attachment.name}.`}`;
-      }
-    }
-
-    // ── Fetch conversation history from backend ───────────────────────────────
-    let historyMessages = [];
-    try {
-      const hRes = await fetch(`/api/history?session_id=${currentSessionId}`);
-      const ct = hRes.headers.get('content-type') || '';
-      if (ct.includes('application/json')) {
-        const hData = await hRes.json();
-        if (hData.success && hData.history) {
-          historyMessages = hData.history.slice(-10).map(m => ({
-            role: m.role,
-            content: m.content
-          }));
-        }
-      }
-    } catch (e) { /* history load failure is non-fatal */ }
-
-    // ── Build messages array ──────────────────────────────────────────────────
-    const messages = [
-      { role: 'system', content: systemContent },
-      ...historyMessages,
-      { role: 'user', content: userMessage }
-    ];
-
-    // ── Call Puter AI (free GPT-4o, no API key!) ──────────────────────────────
-    const response = await puter.ai.chat(messages, { model: puterModel });
-    let content = response?.message?.content ?? response?.text ?? String(response);
-
-    // ── Parse Deep Think reasoning block ─────────────────────────────────────
-    let reasoning = null;
-    if (isDeepThink && content.includes('<thinking>') && content.includes('</thinking>')) {
-      const parts = content.split('</thinking>');
-      const thinkParts = parts[0].split('<thinking>');
-      if (thinkParts.length > 1) reasoning = thinkParts[1].trim();
-      content = parts[1].trim();
-    }
-
-    loaderDiv.remove();
-
-    let responseContent = '';
-    if (reasoning) {
-      responseContent += `*Thinking Process:*\n\`\`\`\n${reasoning}\n\`\`\`\n\n`;
-    }
-    responseContent += content;
-    addMessage('Volcano', responseContent, true);
-
-    // ── Save to MongoDB history (non-blocking, non-fatal) ─────────────────────
-    fetch('/api/save', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        session_id: currentSessionId,
-        user_id: currentUser ? currentUser.id : 'default_user',
-        prompt: prompt,
-        response: content,
-        reasoning: reasoning,
-        attachment: attachment ? { name: attachment.name, type: attachment.type, size: attachment.size } : null
-      })
-    }).then(() => loadRecentSessions()).catch(() => {});
-
-  } catch (err) {
-    loaderDiv.remove();
-    addMessage('Volcano', `🌋 ${err.message || 'Something went wrong. Please try again.'}`, true);
+    return res.json();
   }
+
+  fetch('/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      prompt: prompt,
+      session_id: currentSessionId,
+      user_id: currentUser ? currentUser.id : 'default_user',
+      model: selectedModel,
+      attachment: attachment,
+      deep_think: isDeepThink
+    })
+  })
+  .then(safeJson)
+  .then(data => {
+    loaderDiv.remove();
+    if (data.success) {
+      loadRecentSessions();
+      let responseContent = '';
+      if (data.reasoning) {
+        responseContent += `*Thinking Process:*\n\`\`\`\n${data.reasoning}\n\`\`\`\n\n`;
+      }
+      responseContent += data.content;
+      addMessage('Volcano', responseContent, true);
+    } else {
+      addMessage('Volcano', `An eruption error occurred: ${data.error}`, true);
+    }
+  })
+  .catch(err => {
+    loaderDiv.remove();
+    addMessage('Volcano', `🌋 ${err.message}`, true);
+  });
 }
+
 
 
 

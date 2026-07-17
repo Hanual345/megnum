@@ -2,48 +2,37 @@ import os
 # pyrefly: ignore [missing-import]
 from openai import OpenAI
 
-# ── OpenRouter API key ────────────────────────────────────────────────────────
-# Get a free key at: https://openrouter.ai/keys
-_api_key = os.environ.get("OPENROUTER_API_KEY", "")
+# ── Groq API (free, extremely fast Llama inference) ───────────────────────────
+# Get a free key at: https://console.groq.com
+_api_key = os.environ.get("GROQ_API_KEY", "")
 
-_OPENROUTER_BASE = "https://openrouter.ai/api/v1"
-_TIMEOUT = 50  # seconds — stay under Vercel's 60s function limit
+_GROQ_BASE = "https://api.groq.com/openai/v1"
+_TIMEOUT   = 50  # seconds
 
-# Model fallback chains — if a model is rate-limited or unavailable, try the next
+# Fernace lite  → llama-3.1-8b-instant  (fastest, lightweight)
+# Fernace Flash → llama-3.3-70b-versatile (best quality)
 _MODELS_LITE = [
-    "meta-llama/llama-3.2-3b-instruct:free",
-    "meta-llama/llama-3.1-8b-instruct:free",
-    "google/gemma-2-9b-it:free",
-    "mistralai/mistral-7b-instruct:free",
-    "qwen/qwen-2-7b-instruct:free",
+    "llama-3.1-8b-instant",
+    "llama3-8b-8192",
+    "gemma2-9b-it",
 ]
 _MODELS_FLASH = [
-    "meta-llama/llama-3.1-8b-instruct:free",
-    "meta-llama/llama-3.2-3b-instruct:free",
-    "google/gemma-2-9b-it:free",
-    "mistralai/mistral-7b-instruct:free",
-    "qwen/qwen-2-7b-instruct:free",
-]
-_MODELS_VISION = [
-    "meta-llama/llama-3.2-11b-vision-instruct:free",
-    "meta-llama/llama-3.2-3b-instruct:free",
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant",
+    "gemma2-9b-it",
 ]
 
-# Single shared lazy client (all models use same key/base)
+# Lazy shared client
 _client = None
 
 def _get_client():
     global _client
     if _client is None:
         _client = OpenAI(
-            base_url=_OPENROUTER_BASE,
+            base_url=_GROQ_BASE,
             api_key=_api_key,
             timeout=_TIMEOUT,
-            max_retries=0,  # we handle retries manually via fallback models
-            default_headers={
-                "HTTP-Referer": "https://volcano-ai.vercel.app",
-                "X-Title": "Volcano AI"
-            }
+            max_retries=0,
         )
     return _client
 
@@ -63,12 +52,12 @@ def _try_models(client, model_list, messages):
             return completion.choices[0].message.content, None
         except Exception as e:
             err = str(e)
-            # Skip this model if rate-limited (429) or not available (404)
-            if "429" in err or "404" in err or "rate" in err.lower() or "no endpoints" in err.lower():
-                print(f"Skipping {model_id}: {err[:80]}")
+            # Skip on rate-limit (429) or model not found (404)
+            if "429" in err or "404" in err or "rate" in err.lower() or "decommissioned" in err.lower():
+                print(f"Skipping {model_id}: {err[:100]}")
                 continue
             return None, err  # unexpected error — stop immediately
-    return None, "All available models are temporarily busy. Please try again in 30 seconds."
+    return None, "All models are temporarily busy. Please try again in a moment."
 
 
 def query_volcano_ai(prompt, history=None, model="magma2", attachment=None, deep_think=False):
@@ -77,24 +66,33 @@ def query_volcano_ai(prompt, history=None, model="magma2", attachment=None, deep
     try:
         client = _get_client()
         persona = "Fernace Flash" if model == "magma-flash" else "Fernace flash lite"
+        model_list = _MODELS_FLASH if model == "magma-flash" else _MODELS_LITE
 
         # ── Handle attachments ────────────────────────────────────────────────
         processed_prompt = prompt
-        user_content     = None
-        is_vision        = False
 
         if attachment:
             file_name = attachment.get("name", "file")
             file_size = attachment.get("size", "unknown size")
 
             if attachment.get("type", "").startswith("image/"):
-                is_vision   = True
+                # Groq vision (llama-3.2-11b-vision-instruct is available on Groq)
+                model_list = ["llama-3.2-11b-vision-preview"] + _MODELS_LITE
                 img_url     = attachment.get("data", "")
                 instruction = prompt if prompt else f"Please describe this image: {file_name} in detail."
-                user_content = [
-                    {"type": "text",      "text": instruction},
-                    {"type": "image_url", "image_url": {"url": img_url}}
+                messages_with_vision = [
+                    {"role": "system", "content": f"You are Fernace ({persona}). Write math in LaTeX."},
+                    *[{"role": m.get("role"), "content": m.get("content")} for m in history[-10:]],
+                    {"role": "user", "content": [
+                        {"type": "text", "text": instruction},
+                        {"type": "image_url", "image_url": {"url": img_url}}
+                    ]}
                 ]
+                content, err = _try_models(client, model_list, messages_with_vision)
+                if err:
+                    return {"success": False, "error": err}
+                return {"success": True, "content": content, "reasoning": None}
+
             elif attachment.get("content"):
                 instruction = prompt if prompt else f"Please read and describe: {file_name}."
                 processed_prompt = (
@@ -123,23 +121,14 @@ def query_volcano_ai(prompt, history=None, model="magma2", attachment=None, deep
         messages = [{"role": "system", "content": system_content}]
         for msg in history[-10:]:
             messages.append({"role": msg.get("role"), "content": msg.get("content")})
+        messages.append({"role": "user", "content": processed_prompt})
 
-        if user_content:
-            messages.append({"role": "user", "content": user_content})
-        else:
-            messages.append({"role": "user", "content": processed_prompt})
-
-        # ── Call OpenRouter with automatic fallback ───────────────────────────
-        model_list = _MODELS_VISION if is_vision else (
-            _MODELS_FLASH if model == "magma-flash" else _MODELS_LITE
-        )
+        # ── Call Groq ─────────────────────────────────────────────────────────
         content, err = _try_models(client, model_list, messages)
-
         if err:
             return {"success": False, "error": err}
 
         reasoning = None
-
         if deep_think and "<thinking>" in content and "</thinking>" in content:
             parts = content.split("</thinking>", 1)
             reasoning_part = parts[0].split("<thinking>", 1)
@@ -150,7 +139,4 @@ def query_volcano_ai(prompt, history=None, model="magma2", attachment=None, deep
         return {"success": True, "content": content, "reasoning": reasoning}
 
     except Exception as e:
-        err_msg = str(e)
-        if "timed out" in err_msg.lower() or "timeout" in err_msg.lower():
-            err_msg = "The AI model took too long to respond. Please try again in a moment."
-        return {"success": False, "error": err_msg}
+        return {"success": False, "error": str(e)}
